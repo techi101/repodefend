@@ -1,0 +1,8 @@
+# Pinned to the versions the test suite passes on.
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+SQLAlchemy==2.0.51
+psycopg[binary]==3.3.6
+pydantic-settings==2.15.0
+httpx==0.28.1
+PyJWT==2.15.0
