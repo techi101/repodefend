@@ -6,6 +6,7 @@ services:
     runtime: docker
     rootDir: backend
     plan: free
+    region: singapore      # same region as the Neon database: queries stay local
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
