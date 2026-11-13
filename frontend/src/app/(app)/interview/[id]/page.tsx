@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { CodeBlock, DifficultyChip, ErrorNote, Location, Rich, ScoreBadge, Spinner } from "@/components/ui";
+import { CodeBlock, DifficultyChip, ErrorNote, Icon, Loading, Location, Rich, ScoreBadge, scoreLevel, Spinner } from "@/components/ui";
 import { api, errorText } from "@/lib/api";
 import type { Answer, InterviewSession } from "@/lib/types";
 
@@ -36,7 +36,7 @@ export default function InterviewPage() {
   }
 
   if (error && !session) return <ErrorNote>{error}</ErrorNote>;
-  if (!session) return <Spinner className="text-muted" />;
+  if (!session) return <Loading label="Loading interview" />;
 
   const done = summary;
   const current = session.answers[index];
@@ -44,21 +44,32 @@ export default function InterviewPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="flex items-center justify-between gap-4">
-        <Link href={`/repos/${session.repo_id}`} className="truncate font-mono text-sm text-muted hover:text-ink">
-          ← {session.repo_full_name}
+        <Link href={`/repos/${session.repo_id}`} className="flex min-w-0 items-center gap-1.5 font-mono text-xs text-muted hover:text-ink">
+          <Icon name="back" className="h-3.5 w-3.5" /> <span className="truncate">{session.repo_full_name}</span>
         </Link>
-        {session.status === "active" && <button onClick={finish} className="shrink-0 whitespace-nowrap text-sm text-muted hover:text-ink">End interview</button>}
+        {session.status === "active" && (
+          <button onClick={finish} className="shrink-0 whitespace-nowrap text-xs text-muted hover:text-critical-ink">End interview</button>
+        )}
       </div>
 
-      {/* One step per question: filled once answered, ringed when current. */}
-      <ol className="mt-5 flex gap-1.5" aria-label="Questions">
-        {session.answers.map((a, i) => (
-          <li key={a.id} className="flex-1">
-            <button onClick={() => setIndex(i)} aria-current={i === index && !done ? "step" : undefined}
-              aria-label={`Question ${i + 1}${a.score !== null ? `, scored ${a.score} of 10` : ""}`}
-              className={`h-1.5 w-full rounded-full transition ${a.score !== null ? "bg-accent" : "bg-surface-2"} ${i === index && !done ? "ring-2 ring-accent/40 ring-offset-2 ring-offset-bg" : ""}`} />
-          </li>
-        ))}
+      {/* One numbered step per question: coloured by score once answered, ringed when current. */}
+      <ol className="mt-4 flex gap-1.5" aria-label="Questions">
+        {session.answers.map((a, i) => {
+          const l = a.score !== null ? scoreLevel(a.score) : null;
+          const on = i === index && !done;
+          return (
+            <li key={a.id} className="min-w-0 flex-1">
+              <button onClick={() => setIndex(i)} aria-current={on ? "step" : undefined}
+                aria-label={`Question ${i + 1}${a.score !== null ? `, scored ${a.score} of 10` : ""}`}
+                className="group w-full text-left">
+                <span className={`block h-1 w-full rounded-full transition ${l ? (a.score! >= 7 ? "bg-good" : a.score! >= 5 ? "bg-warning" : "bg-critical") : on ? "bg-accent" : "bg-surface-3 group-hover:bg-line-strong"}`} />
+                <span className={`mt-1.5 hidden font-mono text-[10px] sm:block ${on ? "text-ink" : "text-muted"}`}>
+                  Q{i + 1}{a.score !== null && ` · ${a.score}`}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ol>
 
       {done ? (
@@ -90,6 +101,15 @@ function useElapsed(running: boolean) {
   return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
 }
 
+function Speaker({ who, children }: { who: "interviewer" | "you"; children?: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 font-mono text-[11px]">
+      <span className={`rounded px-1.5 py-px ${who === "interviewer" ? "bg-accent-soft text-accent-ink" : "bg-surface-3 text-ink-2"}`}>{who}</span>
+      {children}
+    </div>
+  );
+}
+
 function QuestionStep({ sessionId, answer, number, total, onGraded, onNext, onFinish, isLast }: {
   sessionId: number; answer: Answer; number: number; total: number;
   onGraded: (s: InterviewSession) => void; onNext: () => void; onFinish: () => void; isLast: boolean;
@@ -117,37 +137,49 @@ function QuestionStep({ sessionId, answer, number, total, onGraded, onNext, onFi
 
   return (
     <section className="mt-8">
-      <div className="flex items-center justify-between text-xs text-muted">
-        <span>Question {number} of {total}</span>
-        {!answered && <span className="font-mono tabular-nums" aria-label="Time on this question">{elapsed}</span>}
-      </div>
-      <h1 className="mt-2 text-xl font-medium leading-snug"><Rich text={q.text} /></h1>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <DifficultyChip d={q.difficulty} />
-        <span className="chip">{q.topic}</span>
-        <Location path={q.path} symbol={q.symbol} start={q.start_line} end={q.end_line} />
+      <div className="flex items-center justify-between font-mono text-xs text-muted">
+        <span>Question <span className="text-ink">{number}</span> of {total}</span>
+        {!answered && (
+          <span className="flex items-center gap-1.5 tabular-nums" aria-label="Time on this question">
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-critical" /> {elapsed}
+          </span>
+        )}
       </div>
 
-      {answer.code && (
-        <div className="mt-4">
-          <button onClick={() => setShowCode((s) => !s)} className="text-sm text-accent-ink hover:underline" aria-expanded={showCode}>
-            {showCode ? "Hide the code" : "Peek at the code"}
-          </button>
-          {showCode && <div className="mt-2"><CodeBlock chunk={answer.code} maxHeight="20rem" /></div>}
+      {/* interviewer turn */}
+      <div className="mt-3 rounded-lg border border-line bg-surface p-4 sm:p-5">
+        <Speaker who="interviewer"><Location path={q.path} symbol={q.symbol} start={q.start_line} end={q.end_line} /></Speaker>
+        <h1 className="mt-3 text-lg font-medium leading-snug sm:text-xl"><Rich text={q.text} /></h1>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <DifficultyChip d={q.difficulty} />
+          <span className="chip">{q.topic}</span>
+          {answer.code && (
+            <button onClick={() => setShowCode((s) => !s)} className="btn-link ml-auto text-xs" aria-expanded={showCode}>
+              <Icon name="file" className="h-3.5 w-3.5" /> {showCode ? "Hide the code" : "Peek at the code"}
+            </button>
+          )}
         </div>
-      )}
+        {answer.code && showCode && <div className="mt-3"><CodeBlock chunk={answer.code} maxHeight="20rem" /></div>}
+      </div>
 
       {!answered ? (
-        <div className="mt-6">
-          <label htmlFor="answer" className="sr-only">Your answer</label>
-          <textarea id="answer" className="input min-h-44 resize-y leading-relaxed" autoFocus maxLength={4000}
-            placeholder="Answer as you would out loud: what it does, why it's built this way, what breaks…"
-            value={text} onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); }} />
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <span className="text-xs text-muted">{text.length}/4000 · Ctrl+Enter to submit</span>
+        <div className="mt-4">
+          <div className="overflow-hidden rounded-lg border border-line-strong bg-code focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/25">
+            <div className="border-b border-line px-4 py-2"><Speaker who="you"><span className="text-muted">answer as you would out loud</span></Speaker></div>
+            <label htmlFor="answer" className="sr-only">Your answer</label>
+            <textarea id="answer" className="block min-h-44 w-full resize-y bg-transparent px-4 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-muted"
+              autoFocus maxLength={4000}
+              placeholder="What it does, why it's built this way, what breaks…"
+              value={text} onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); }} />
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="font-mono text-[11px] text-muted">
+              <span className="tabular-nums">{text.length}/4000</span>
+              <span className="hidden sm:inline"> · <span className="kbd">Ctrl</span> + <span className="kbd">Enter</span> to submit</span>
+            </span>
             <button onClick={submit} disabled={!text.trim() || grading} className="btn-primary">
-              {grading ? <><Spinner /> Grading…</> : "Submit answer"}
+              {grading ? <><Spinner /> Grading…</> : <>Submit answer <Icon name="arrow" /></>}
             </button>
           </div>
           {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
@@ -161,30 +193,61 @@ function QuestionStep({ sessionId, answer, number, total, onGraded, onNext, onFi
 
 function Feedback({ answer, onNext, isLast }: { answer: Answer; onNext: () => void; isLast: boolean }) {
   return (
-    <div className="mt-6 space-y-4">
-      <div className="card p-5">
+    <div className="mt-4 space-y-4">
+      {/* candidate turn, collapsed */}
+      <details className="group rounded-lg border border-line bg-code">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5">
+          <Speaker who="you"><span className="text-muted">your answer</span></Speaker>
+          <span className="ml-auto flex items-center gap-1 font-mono text-[11px] text-muted">
+            <span className="group-open:hidden">Show more</span><span className="hidden group-open:inline">Show less</span>
+            <Icon name="chevron" className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+          </span>
+        </summary>
+        <p className="whitespace-pre-wrap border-t border-line px-4 py-3 text-sm leading-relaxed text-ink-2">{answer.text}</p>
+      </details>
+
+      {/* grade */}
+      <div className="rounded-lg border border-line bg-surface p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <ScoreBadge score={answer.score} size="lg" />
-          <button onClick={onNext} className="btn-primary">{isLast ? "See results →" : "Next question →"}</button>
+          <button onClick={onNext} className="btn-primary">
+            {isLast ? "See results" : "Next question"} <Icon name="arrow" />
+          </button>
         </div>
-        <p className="mt-4 leading-relaxed"><Rich text={answer.feedback} /></p>
+        <div className="mt-4">
+          <Speaker who="interviewer"><span className="text-muted">feedback</span></Speaker>
+          <p className="mt-2 leading-relaxed text-ink"><Rich text={answer.feedback} /></p>
+        </div>
+      </div>
+
+      {/* rubric as a diff: what was missing (-) and what a strong answer covers (+) */}
+      <div className="overflow-hidden rounded-lg border border-line font-mono text-[12.5px] leading-relaxed">
+        <p className="border-b border-line bg-surface-2 px-4 py-2 text-[11px] text-muted">
+          rubric{answer.question.path ? ` · checked against ${answer.question.path}:${answer.question.start_line}-${answer.question.end_line}` : ""}
+        </p>
         {answer.missed.length > 0 && (
-          <>
-            <p className="mt-4 text-xs font-medium uppercase tracking-wide text-muted">You missed</p>
-            <ul className="mt-1.5 space-y-1 text-sm">
-              {answer.missed.map((m) => <li key={m} className="flex gap-2"><span aria-hidden className="text-muted">–</span><span><Rich text={m} /></span></li>)}
-            </ul>
-          </>
+          <ul aria-label="You missed">
+            {answer.missed.map((m) => (
+              <li key={m} className="flex gap-3 bg-critical-bg px-4 py-1.5 text-critical-ink">
+                <span aria-hidden className="select-none">-</span>
+                <span className="font-sans text-sm"><span className="sr-only">Missed: </span><Rich text={m} /></span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {answer.missed.length === 0 && (
+          <p className="flex gap-3 bg-good-bg px-4 py-1.5 text-good-ink"><span aria-hidden>+</span><span className="font-sans text-sm">Nothing important missed.</span></p>
+        )}
+        {answer.reference_answer && (
+          <div className="flex gap-3 border-t border-line bg-good-bg px-4 py-2.5 text-good-ink">
+            <span aria-hidden className="select-none">+</span>
+            <div className="font-sans text-sm">
+              <p className="font-mono text-[11px]">what a strong answer covers</p>
+              <p className="mt-1 leading-relaxed text-ink"><Rich text={answer.reference_answer} /></p>
+            </div>
+          </div>
         )}
       </div>
-      <details className="card p-4 text-sm" open>
-        <summary className="cursor-pointer font-medium">What a strong answer covers</summary>
-        <p className="mt-2 leading-relaxed text-ink-2"><Rich text={answer.reference_answer} /></p>
-      </details>
-      <details className="card p-4 text-sm">
-        <summary className="cursor-pointer font-medium">Your answer</summary>
-        <p className="mt-2 whitespace-pre-wrap leading-relaxed text-ink-2">{answer.text}</p>
-      </details>
     </div>
   );
 }
@@ -192,28 +255,37 @@ function Feedback({ answer, onNext, isLast }: { answer: Answer; onNext: () => vo
 function Summary({ session, onRetry }: { session: InterviewSession; onRetry: () => void }) {
   return (
     <section className="mt-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Interview finished</h1>
-      <div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-2">
-        <p className="text-5xl font-semibold tabular-nums">
-          {session.average ?? "–"}<span className="text-xl text-muted">/10</span>
-        </p>
-        <p className="text-sm text-ink-2">average over {session.answered} of {session.total} questions</p>
+      <p className="eyebrow">Step 4 · Review</p>
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight">Interview finished</h1>
+      <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line">
+        <div className="bg-surface p-4">
+          <p className="text-xs text-muted">Average score</p>
+          <p className="mt-1 font-mono text-4xl font-semibold tabular-nums">
+            {session.average ?? "–"}<span className="text-lg text-muted">/10</span>
+          </p>
+        </div>
+        <div className="bg-surface p-4">
+          <p className="text-xs text-muted">Questions answered</p>
+          <p className="mt-1 font-mono text-4xl font-semibold tabular-nums">
+            {session.answered}<span className="text-lg text-muted">/{session.total}</span>
+          </p>
+        </div>
       </div>
-      <ol className="mt-6 space-y-2">
+      <ol className="mt-6 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
         {session.answers.map((a, i) => (
-          <li key={a.id} className="card flex items-start gap-3 p-4">
-            <span className="w-5 shrink-0 text-sm tabular-nums text-muted">{i + 1}</span>
+          <li key={a.id} className="flex items-start gap-3 p-4">
+            <span className="w-6 shrink-0 font-mono text-xs tabular-nums text-muted">Q{i + 1}</span>
             <div className="min-w-0 flex-1">
               <p className="text-sm leading-snug"><Rich text={a.question.text} /></p>
-              <p className="mt-1"><Location path={a.question.path} symbol={a.question.symbol} start={a.question.start_line} end={a.question.end_line} /></p>
+              <p className="mt-1.5"><Location path={a.question.path} symbol={a.question.symbol} start={a.question.start_line} end={a.question.end_line} /></p>
             </div>
             <ScoreBadge score={a.score} />
           </li>
         ))}
       </ol>
-      <div className="mt-6 flex gap-2">
-        <button onClick={onRetry} className="btn-primary">New interview</button>
-        <Link href="/progress" className="btn-ghost">See progress</Link>
+      <div className="mt-6 flex flex-wrap gap-2">
+        <Link href="/progress" className="btn-primary">See progress <Icon name="arrow" /></Link>
+        <button onClick={onRetry} className="btn-ghost"><Icon name="refresh" /> New interview</button>
       </div>
     </section>
   );
